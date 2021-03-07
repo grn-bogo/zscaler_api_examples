@@ -36,7 +36,7 @@ headers = {
     'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalertwo.net/api/v1/'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 IMPLEMENTED_GET_ENDPOINTS = ['users', 'departments', 'groups',
                              'security',
@@ -94,7 +94,8 @@ if __name__ == '__main__':
     get_endpoints = args.get_endpoints[0]
 
     # authentication
-    result = session_requests.post(url=API_URL + AUTH_ENDPOINT,
+    auth_url = '/'.join([API_URL, AUTH_ENDPOINT])
+    result = session_requests.post(url=auth_url,
                                    headers=headers,
                                    data=login_data.to_json())
     print('AUTH RESULT code {0}'.format(result.status_code))
@@ -105,7 +106,8 @@ if __name__ == '__main__':
             print('ENDPOINT: {0} is not implemented'.format(get_endpoint))
             continue
         try:
-            get_result = session_requests.get(url=API_URL + get_endpoint,
+            endpoint_url = '/'.join([API_URL + get_endpoint])
+            get_result = session_requests.get(url=endpoint_url,
                                               headers=headers)
             print('ENDPOINT: {endp}, GET RESULT: {code}'.format(endp=get_endpoint, code=get_result.status_code))
             file_name = '{ep}_{ts}'.format(ep=get_endpoint, ts=ts)
