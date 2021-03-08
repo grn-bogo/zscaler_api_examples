@@ -13,6 +13,24 @@ HEADERS = {
 
 API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
+AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
+
+
+def formatted_datetime():
+    wo_ms = str(datetime.datetime.now()).split('.')[0]
+    day, time_str = tuple(wo_ms.split(' '))
+    return "_".join([day.replace("-", ""), time_str.replace(":", "")])
+
+
+# keep chunks at 400 for zscaler API
+def chunks_of_len(list_to_chunk, chunk_len=400):
+    n = max(1, chunk_len)
+    return (list_to_chunk[i:i + n] for i in range(0, len(list_to_chunk), n))
+
+
+def chunks_n_eq(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
 class LoginData:
@@ -43,15 +61,37 @@ class LoginData:
 
 
 class UserManager:
-    DEPARTMENTS_ENDPOINT = 'departments'
-    GROUPS_ENDPOINT = 'groups'
-    DEPARTMENTS_ENDPOINT_URL = '/'.join([API_URL, DEPARTMENTS_ENDPOINT])
-    GROUPS_ENDPOINT_URL = '/'.join([API_URL, GROUPS_ENDPOINT])
+    SECONDS_IN_HOUR = 60 * 60
 
-    def __init__(self, authenticated_session):
-        self._session = authenticated_session
+    DEPARTMENTS_ENDPOINT = 'departments'
+    DEPARTMENTS_ENDPOINT_URL = '/'.join([API_URL, DEPARTMENTS_ENDPOINT])
+    GROUPS_ENDPOINT = 'groups'
+    GROUPS_ENDPOINT_URL = '/'.join([API_URL, GROUPS_ENDPOINT])
+    USERS_ENDPOINT = 'users'
+    USERS_ENDPOINT_URL = '/'.join([API_URL, USERS_ENDPOINT])
+    USER_PUT_ENDPOINT = '/'.join([API_URL, USERS_ENDPOINT, '{}'])
+
+    def __init__(self):
+        self._session = None
         self._departments = None
-        self._groups = None
+        self._groups_dict = None
+        self._groups_list = None
+        self._page_size = 500
+
+    def __del__(self):
+        self._session.close()
+
+    # move this to class aggregating managers
+    def start_auth_session(self, u, p, k):
+        login_data = LoginData(usr=u, pwd=p, api_key=k)
+        self._session = requests.session()
+        auth_result = self._session.post(url=AUTH_URL,
+                                         headers=HEADERS,
+                                         data=login_data.to_json())
+        print('AUTH RESULT code {0}'.format(auth_result.status_code))
+        if auth_result.status_code != 200:
+            print("Authentication failed, exiting!")
+            sys.exit(-1)
 
     @sleep_and_retry
     @limits(calls=1, period=1)
@@ -64,14 +104,21 @@ class UserManager:
     @limits(calls=1, period=1)
     def get_groups(self):
         get_groups_results = self._session.get(url=self.GROUPS_ENDPOINT_URL,
-                                             headers=HEADERS)
-        self._groups = json.loads(get_groups_results.content.decode('utf-8'))
+                                               headers=HEADERS)
+        self._groups_list = json.loads(get_groups_results.content.decode('utf-8'))
+        self._groups_dict = {g['name']: g for g in self._groups_list}
 
     @property
     def groups(self):
-        if self._groups is None:
+        if self._groups_dict is None:
             self.get_groups()
-        return self._groups
+        return self._groups_dict
+
+    @property
+    def groups_list(self):
+        if self._groups_list is None:
+            self.get_groups()
+        return self._groups_list
 
     @property
     def departments(self):
@@ -80,184 +127,127 @@ class UserManager:
         return self._departments
 
     def _validate_groups(self, input_groups):
-        existing_group_names = set([group['name'] for group in self.groups])
-        if not set(input_groups).issubset(existing_group_names):
+        if not set(input_groups).issubset(self.groups.keys()):
             print('ERROR: one or more of input groups is not added in ZIA hosted DB')
-            sys.exit()
+            sys.exit(1)
 
     def _validate_departments(self, input_department):
         existing_dep_names = set([dep['name'] for dep in self.departments])
         if input_department not in existing_dep_names:
             print('ERROR: input department is not added in ZIA hosted DB')
-            sys.exit()
+            sys.exit(1)
 
+    def initialize_n_validate_data(self, input_department, input_groups):
+        self._validate_departments(input_department=input_department)
+        self._validate_groups(input_groups=input_groups)
 
-def api_get_endpoints(endpoints):
-    try:
-        params_list = endpoints.split(',')
-        return params_list
-    except:
-        raise argparse.ArgumentTypeError("use a comma separated endpoints list like: users,locations")
+    def get_and_modify_users_from_api(self, input_department, groups):
+        page_number = 1
+        group_index = 0
+        while True:
+            # five 500 long user pages per group -> 2.5k users per group
+            if page_number % 5 == 0:
+                if group_index < (len(groups) - 1):
+                    group_index += 1
+            group_to_add_name = groups[group_index]
+            users_data = self.get_users_page_to_modify(input_department=input_department,
+                                                       page_number=page_number)
+            if len(users_data) == 0:
+                break
+            for user in users_data:
+                try:
+                    self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
+                except Exception as exception:
+                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT {}'.format(user['name'], exception))
+            page_number += 1
 
+    @sleep_and_retry
+    @limits(calls=1000, period=SECONDS_IN_HOUR)
+    def update_user_with_group(self, user_obj, group_to_add_name):
+        group_to_add = self.groups[group_to_add_name]
+        if group_to_add not in user_obj['groups']:
+            user_obj['groups'].append(group_to_add)
+            put_user_result = self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
+                                                headers=HEADERS,
+                                                json=user_obj)
+            print('USER PUT UPDATE RESULT: {}'.format(put_user_result.status_code))
+        else:
+            print('USER {} ALREADY IN GROUP: {}'.format(user_obj['name'], str(group_to_add)))
 
-def formatted_datetime():
-    wo_ms = str(datetime.datetime.now()).split('.')[0]
-    day, time_str = tuple(wo_ms.split(' '))
-    return "_".join([day.replace("-", ""), time_str.replace(":", "")])
-
-
-# keep chunks at 400 for zscaler API
-def chunks_of_len(list_to_chunk, chunk_len=400):
-    n = max(1, chunk_len)
-    return (list_to_chunk[i:i + n] for i in range(0, len(list_to_chunk), n))
-
-
-def chunks_n_eq(lst, n):
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
-
-
-def bulk_add_test_users():
-    pass
-
-
-def get_users_to_update_group(session, department, group_list, group_size, start_group):
-    departments = get_departments(session=session)
-    groups = get_groups(session=session)
-    validate_input_groups(groups)
-
-    groups_dict = {group['name']: group for group in groups if group['name'] in group_list}
-
-    page_no = start_group
-    while True:
-        group_to_add = group_list[page_no - 1]
-        group_to_add_obj = groups_dict[group_to_add]
-        pagination = '&page={page_no}&pageSize={page_size}'.format(page_no=page_no, page_size=group_size)
-        users_endpoint = 'users'
-        users_endpoint_url = '/'.join([API_URL, users_endpoint, '?dept=' + department + pagination])
-        get_users_result = session.get(url=users_endpoint_url,
-                                       headers=HEADERS)
+    @sleep_and_retry
+    @limits(calls=1, period=1)
+    def get_users_page_to_modify(self, input_department, page_number=1):
+        pagination = '&page={page_no}&pageSize={page_size}'.format(page_no=page_number, page_size=self._page_size)
+        paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + input_department + pagination])
+        get_users_result = self._session.get(url=paginated_url, headers=HEADERS)
         users = json.loads(get_users_result.content.decode('utf-8'))
-        for user in users:
-            user_put_endpoint = '/'.join([API_URL, users_endpoint, str(user['id'])])
-            if group_to_add_obj not in user['groups']:
-                user['groups'].append(group_to_add_obj)
-                put_result = session.put(url=user_put_endpoint, headers=HEADERS, json=user)
-                print(put_result)
+        return users
 
-        page_no = page_no + 1
-        if page_no > len(group_list):
-            break
+    @sleep_and_retry
+    @limits(calls=1000, period=SECONDS_IN_HOUR)
+    def add_test_user(self, user_to_copy):
+        user_name = user_to_copy['login_name'].split('@')[0]
+        new_user = {
+            'name': 'tu_{}'.format(user_name),
+            'email': '{}@bgriner.zscalerthree.net'.format(user_name),
+            'department': {'id': 21826133, 'name': 'test_dep_1'},
+            'groups': [{'id': 21826124, 'name': 'group_mod_test_1'}],
+            'comments': 'asdas',
+            'adminUser': False,
+            'password': '1DPUA2UDPA3*'
+        }
+        post_user_result = self._session.post(url=self.USERS_ENDPOINT_URL,
+                                              headers=HEADERS,
+                                              json=new_user)
+        print('TEST USER POST RESULT: {}'.format(post_user_result.status_code))
 
+    def group_to_dept(self, u, p, k, start=1, file_path=None):
+        self.start_auth_session(u=u, p=p, k=k)
+        dept_name = self.get_department_user_selection()
+        input_groups = self.get_groups_user_selection()
+        if file_path is None:
+            self.get_and_modify_users_from_api(input_department=dept_name, groups=input_groups)
 
-def validate_input_groups(groups):
-    existing_groups = set([group['name'] for group in groups])
-    if not set(groups_list).issubset(existing_groups):
-        print('ERROR: one or more of input groups is not added in ZIA hosted DB')
-        sys.exit()
+    def get_groups_user_selection(self):
+        for idx, group in enumerate(self.groups_list):
+            print('{}: {}'.format(idx, group))
+        input_str = input('Choose groups by providing comma separted indices:')
+        group_indices = input_str.split(',')
+        input_groups = []
+        for str_idx in group_indices:
+            idx = int(str_idx)
+            input_groups.append(self.groups_list[idx]['name'])
+        print('Selected groups: {}'.format(str(input_groups)))
+        return input_groups
 
+    def get_department_user_selection(self):
+        for idx, department in enumerate(self.departments):
+            print('{}: {}'.format(idx, department['name']))
+        dept_idx = int(input('Choose department by index:'))
+        dept_name = self.departments[dept_idx]['name']
+        print('Selected dept: {}'.format(dept_name))
+        return dept_name
 
-def get_departments(session):
-    departments_endpoint = 'departments'
-    departments_endpoint_url = '/'.join([API_URL, departments_endpoint])
-    get_user_results = session.get(url=departments_endpoint_url,
-                                   headers=HEADERS)
-    departments = json.loads(get_user_results.content.decode('utf-8'))
-    return departments
+    def bulk_add_test_users(self, bulk_users_file_path='tests/resources/17k_users.json'):
+        with open(bulk_users_file_path, 'r') as users_f:
+            data = json.load(users_f)
+            for user in data:
+                self.add_test_user(user_to_copy=user)
 
-
-def get_groups(session):
-    groups_endpoint = 'groups'
-    groups_endpoint_url = '/'.join([API_URL, groups_endpoint])
-    get_user_results = session.get(url=groups_endpoint_url,
-                                   headers=HEADERS)
-    groups = json.loads(get_user_results.content.decode('utf-8'))
-    return groups
-
-
-def remove_users(users_id_list):
-    users_blk_del_endpoint = 'users/bulkDelete'
-    endpoint_url = '/'.join([API_URL, users_blk_del_endpoint])
-    for chunk in chunks_of_len(users_id_list):
-        blk_del_result = session_requests.post(url=endpoint_url,
-                                               json={
-                                                   'ids': chunk
-                                               },
-                                               headers=HEADERS)
-        # print('BULK DELETE RESULT: {}'.format(blk_del_result.status_code))
-        time.sleep(USR_BLK_COOLDWON)
+    @sleep_and_retry
+    @limits(calls=10, period=SECONDS_IN_HOUR)
+    def remove_users(self, users_id_list):
+        users_blk_del_endpoint = 'users/bulkDelete'
+        endpoint_url = '/'.join([API_URL, users_blk_del_endpoint])
+        for chunk in chunks_of_len(users_id_list):
+            blk_del_result = self._session.post(url=endpoint_url,
+                                                json={
+                                                    'ids': chunk
+                                                },
+                                                headers=HEADERS)
+            print('BULK DELETE USERS RESULT: {}'.format(blk_del_result.status_code))
+        time.sleep(61)
 
 
 if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-u', '--user',
-                        type=str,
-                        default=None,
-                        help='User name for an Admin account on your zscaler admin portal')
-    parser.add_argument('-p', '--password',
-                        type=str,
-                        default=None,
-                        help='Password for the account provided under -u/--user')
-    parser.add_argument('-k', '--api-key',
-                        type=str,
-                        default=None,
-                        help='API Key from Administration->API Key Management')
-
-    parser.add_argument('-d',
-                        help="Department to update group for",
-                        default=None,
-                        type=str,
-                        action='store',
-                        dest="filter_str")
-
-    parser.add_argument('-g',
-                        help="Groups to add",
-                        default="test_group_1",
-                        type=str,
-                        action='store',
-                        dest="groups_str")
-
-    parser.add_argument('-size',
-                        help="Size of each group",
-                        default=400,
-                        type=int,
-                        action='store',
-                        dest="group_size")
-
-    parser.add_argument('-start',
-                        help="Group to start with",
-                        default=1,
-                        type=int,
-                        action='store',
-                        dest="start_group")
-
-    args = parser.parse_args()
-
-    login_data = LoginData(usr=args.user,
-                           pwd=args.password,
-                           api_key=args.api_key)
-    session_requests = requests.session()
-    filter_str = args.filter_str
-    groups_list = args.groups_str.split(',')
-
-    auth_url = '/'.join([API_URL, AUTH_ENDPOINT])
-    auth_result = session_requests.post(url=auth_url,
-                                        headers=HEADERS,
-                                        data=login_data.to_json())
-
-    print('AUTH RESULT code {0}'.format(auth_result.status_code))
-    if auth_result.status_code != 200:
-        print("Authentication failed, exiting!")
-        sys.exit(-1)
-
-    try:
-        get_users_to_update_group(
-            session=session_requests,
-            department=filter_str,
-            group_list=groups_list,
-            group_size=args.group_size,
-            start_group=args.start_group)
-    except Exception as exception:
-        print(exception)
+    fire.Fire(component=UserManager)
