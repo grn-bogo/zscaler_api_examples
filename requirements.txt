@@ -1,0 +1,4 @@
+fire==0.3.1
+httplib2==0.18.1
+ratelimit==2.2.1
+requests==2.25.1

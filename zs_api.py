@@ -11,7 +11,7 @@ HEADERS = {
     'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscloud.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -141,10 +141,12 @@ class UserManager:
         self._validate_departments(input_department=input_department)
         self._validate_groups(input_groups=input_groups)
 
-    def get_and_modify_users_from_api(self, input_department, groups):
-        page_number = 1
+    def get_and_modify_users_from_api(self, input_department, groups, start, end):
+        page_number = start
         group_index = 0
         while True:
+            if page_number > end:
+                break
             # five 500 long user pages per group -> 2.5k users per group
             if page_number % 5 == 0:
                 if group_index < (len(groups) - 1):
@@ -202,12 +204,17 @@ class UserManager:
                                               json=new_user)
         print('TEST USER POST RESULT: {}'.format(post_user_result.status_code))
 
-    def group_to_dept(self, u, p, k, start=1, file_path=None):
+    def group_to_dept(self, u, p, k, start=1, end=10000, psize=None, file_path=None):
+        if psize is not None:
+            self._page_size = psize
         self.start_auth_session(u=u, p=p, k=k)
         dept_name = self.get_department_user_selection()
         input_groups = self.get_groups_user_selection()
         if file_path is None:
-            self.get_and_modify_users_from_api(input_department=dept_name, groups=input_groups)
+            self.get_and_modify_users_from_api(input_department=dept_name,
+                                               groups=input_groups,
+                                               start=start,
+                                               end=end)
 
     def get_groups_user_selection(self):
         for idx, group in enumerate(self.groups_list):
