@@ -11,7 +11,7 @@ HEADERS = {
     'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerthree.net/api/v1'
+API_URL = 'https://admin.zscloud.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -158,7 +158,8 @@ class UserManager:
                 try:
                     self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
                 except Exception as exception:
-                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT {}'.format(user['name'], exception))
+                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
+                    continue
             page_number += 1
 
     @sleep_and_retry
