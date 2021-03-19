@@ -164,6 +164,23 @@ class UserManager:
                     continue
             page_number += 1
 
+    def get_and_modify_user_name_from_api(self, start, end):
+        page_number = start
+        while True:
+            if page_number > end:
+                break
+            # five 500 long user pages per group -> 2.5k users per group
+            users_data = self.get_users_page_to_modify(page_number=page_number)
+            if len(users_data) == 0:
+                break
+            for user in users_data:
+                try:
+                    self.update_user_name(user_obj=user)
+                except Exception as exception:
+                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
+                    continue
+            page_number += 1
+
     @sleep_and_retry
     @limits(calls=1000, period=SECONDS_IN_HOUR)
     def update_user_with_group(self, user_obj, group_to_add_name):
@@ -178,10 +195,25 @@ class UserManager:
             print('USER {} ALREADY IN GROUP: {}'.format(user_obj['name'], str(group_to_add)))
 
     @sleep_and_retry
+    @limits(calls=1000, period=SECONDS_IN_HOUR)
+    def update_user_name(self, user_obj):
+        if '@' in user_obj['name']:
+            user_obj['name'] = user_obj['name'].split('@')[0]
+            put_user_result = self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
+                                                headers=HEADERS,
+                                                json=user_obj)
+            print('USER PUT UPDATE RESULT: {}'.format(put_user_result.status_code))
+        else:
+            print('USER NAME {} NOT UPDATED'.format(user_obj['name']))
+
+    @sleep_and_retry
     @limits(calls=1, period=1)
-    def get_users_page_to_modify(self, input_department, page_number=1):
-        pagination = '&page={page_no}&pageSize={page_size}'.format(page_no=page_number, page_size=self._page_size)
-        paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + input_department + pagination])
+    def get_users_page_to_modify(self, input_department=None, page_number=1):
+        pagination = 'page={page_no}&pageSize={page_size}'.format(page_no=page_number, page_size=self._page_size)
+        if input_department is not None:
+            paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + input_department + '&' + pagination])
+        else:
+            paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT + '?' + pagination])
         get_users_result = self._session.get(url=paginated_url, headers=HEADERS)
         users = json.loads(get_users_result.content.decode('utf-8'))
         return users
@@ -215,6 +247,12 @@ class UserManager:
                                                groups=input_groups,
                                                start=start,
                                                end=end)
+
+    def remove_email_from_user_name(self, u, p, k, start=1, end=10000, psize=None, file_path=None):
+        if psize is not None:
+            self._page_size = psize
+        self.start_auth_session(u=u, p=p, k=k)
+        self.get_and_modify_user_name_from_api(start=start, end=end)
 
     def get_groups_user_selection(self):
         for idx, group in enumerate(self.groups_list):
