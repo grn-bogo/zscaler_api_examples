@@ -29,7 +29,7 @@ Run the script using the following command specifing your credentials,
 start at page 1 and end at page 35 (7 groups, each 5 pages, each page holds 500 users)
 
 ```bash
-python group_to_dept -k <organiztions API key> -u <admin user name> -p <admin user password> -start 1 -end 35
+python zs_api.py group_to_dept -k <organiztions API key> -u <admin user name> -p <admin user password> -start 1 -end 35
 ```
 
 You will be prompted to select a department:
