@@ -1,7 +1,7 @@
 ## Requirements
 
 - Python 3.8 or later
-- modules from requirements.txt
+- modules from requirements.txt (pip install -r requirements.txt)
 
 ## Grouping users from a selected department
 
