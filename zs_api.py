@@ -1,6 +1,7 @@
 import datetime
 import fire
 import json
+import os
 from ratelimit import limits, sleep_and_retry
 import requests
 import sys
@@ -8,7 +9,7 @@ import time
 
 HEADERS = {
     'content-type': "application/json",
-    'cache-control': "no-cache"
+    # 'cache-control': "no-cache"
 }
 
 API_URL = 'https://admin.zscalerthree.net/api/v1'
@@ -60,8 +61,28 @@ class LoginData:
         return key, now
 
 
+class TestUserUpload:
+
+    def __init__(self, users_to_upload):
+        self.users_to_upload = users_to_upload
+        self.next_user_idx = 0
+
+    def get_next(self):
+        user_data = self.users_to_upload[self.next_user_idx]
+        self.next_user_idx = self.next_user_idx + 1
+        return user_data
+
+
+class DepartmentInterationStatus:
+    def __init__(self, departments_list):
+        self.departments_list = departments_list
+        self.current_department_page = 0
+        self.current_department = departments_list[0]
+
+
 class UserManager:
     SECONDS_IN_HOUR = 60 * 60
+    THREE_MINUTES = 3 * 60
 
     DEPARTMENTS_ENDPOINT = 'departments'
     DEPARTMENTS_ENDPOINT_URL = '/'.join([API_URL, DEPARTMENTS_ENDPOINT])
@@ -71,23 +92,27 @@ class UserManager:
     USERS_ENDPOINT_URL = '/'.join([API_URL, USERS_ENDPOINT])
     USER_PUT_ENDPOINT = '/'.join([API_URL, USERS_ENDPOINT, '{}'])
 
-    def __init__(self):
+    DEPT_GROUP_PROGRESS_FILE = 'add_dept_group_progress'
+
+    def __init__(self, u, p, k):
         self._session = None
-        self._departments = None
+        self._departments_list = None
+        self._departments_dict = None
         self._groups_dict = None
         self._groups_list = None
         self._page_size = 500
+        self._login_data = LoginData(usr=u, pwd=p, api_key=k)
+        self._test_users_to_upload = None
 
     def __del__(self):
         self._session.close()
 
     # move this to class aggregating managers
-    def start_auth_session(self, u, p, k):
-        login_data = LoginData(usr=u, pwd=p, api_key=k)
+    def start_auth_session(self):
         self._session = requests.session()
         auth_result = self._session.post(url=AUTH_URL,
                                          headers=HEADERS,
-                                         data=login_data.to_json())
+                                         data=self._login_data.to_json())
         print('AUTH RESULT code {0}'.format(auth_result.status_code))
         if auth_result.status_code != 200:
             print("Authentication failed, exiting!")
@@ -98,7 +123,8 @@ class UserManager:
     def get_departments(self):
         get_departments_results = self._session.get(url=self.DEPARTMENTS_ENDPOINT_URL,
                                                     headers=HEADERS)
-        self._departments = json.loads(get_departments_results.content.decode('utf-8'))
+        self._departments_list = json.loads(get_departments_results.content.decode('utf-8'))
+        self._departments_dict = {d['name']: d for d in self._departments_list}
 
     @sleep_and_retry
     @limits(calls=1, period=1)
@@ -122,9 +148,9 @@ class UserManager:
 
     @property
     def departments(self):
-        if self._departments is None:
+        if self._departments_list is None:
             self.get_departments()
-        return self._departments
+        return self._departments_list
 
     def _validate_groups(self, input_groups):
         if not set(input_groups).issubset(self.groups.keys()):
@@ -164,6 +190,74 @@ class UserManager:
                     continue
             page_number += 1
 
+    def save_page_progress(self, department_name, page):
+        progress = {'department': department_name, 'page': page}
+        with open(UserManager.DEPT_GROUP_PROGRESS_FILE, 'w') as progress_file:
+            json.dump(progress, progress_file)
+
+    def load_page_progress(self):
+        if os.path.exists(UserManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(UserManager.DEPT_GROUP_PROGRESS_FILE):
+            with open(UserManager.DEPT_GROUP_PROGRESS_FILE, 'r') as progress_file:
+                progress_data = json.load(progress_file)
+                return progress_data['department'], progress_data['page']
+        else:
+            return None, 0
+
+    def groups_for_dept_exist(self):
+        self.get_departments()
+        self.get_groups()
+        departments_names = set(self._departments_dict.keys())
+        group_names = set(self._groups_dict.keys())
+        # default depratment Service Admin needs to be excluded from this check
+        # departments_names.remove('Service Admin')
+        diff = departments_names.difference(group_names)
+        if len(diff):
+            print('MISSING GROUPS FOR DEPARTMENTS: ')
+            print(diff)
+            sys.exit(-1)
+
+    def add_user_dept_group(self, page_size=None):
+        self.start_auth_session()
+        self.groups_for_dept_exist()
+        if page_size is not None:
+            self._page_size = page_size
+
+        dept_name, last_page = self.load_page_progress()
+        start_dept_idx = 0
+        if dept_name is not None:
+            start_dept_idx = self._departments_list.index(self._departments_dict[dept_name])
+
+        start_page = 0
+        if last_page != 0:
+            start_page = last_page
+
+        for department in self._departments_list[start_dept_idx:]:
+            current_dept_name = department['name']
+            print('STARING DEPARTMENT GROUP INSERT FOR DEPARTMENT {} AT PAGE {}'.format(current_dept_name, start_page))
+            department_group = self._groups_dict[current_dept_name]
+            self.add_department_group(start_page=start_page,
+                                      group_to_add=department_group,
+                                      input_department=current_dept_name)
+            # after first continued department start with page 0
+            start_page = 0
+
+    def add_department_group(self, start_page, group_to_add, input_department):
+        page_number = start_page
+        while True:
+            group_to_add_name = group_to_add['name']
+            users_data = self.get_users_page_to_modify(input_department=input_department,
+                                                       page_number=page_number)
+            if len(users_data) == 0:
+                break
+            for user in users_data:
+                try:
+                    self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
+                except Exception as exception:
+                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
+                    continue
+            page_number += 1
+            self.save_page_progress(input_department, page_number)
+
     def get_and_modify_user_name_from_api(self, start, end):
         page_number = start
         while True:
@@ -182,9 +276,11 @@ class UserManager:
             page_number += 1
 
     @sleep_and_retry
-    @limits(calls=1000, period=SECONDS_IN_HOUR)
+    @limits(calls=50, period=THREE_MINUTES)
     def update_user_with_group(self, user_obj, group_to_add_name):
         group_to_add = self.groups[group_to_add_name]
+        if 'groups' not in user_obj or user_obj['groups'] is None:
+            user_obj['groups'] = []
         if group_to_add not in user_obj['groups']:
             user_obj['groups'].append(group_to_add)
             put_user_result = self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
@@ -195,7 +291,7 @@ class UserManager:
             print('USER {} ALREADY IN GROUP: {}'.format(user_obj['name'], str(group_to_add)))
 
     @sleep_and_retry
-    @limits(calls=1000, period=SECONDS_IN_HOUR)
+    @limits(calls=50, period=THREE_MINUTES)
     def update_user_name(self, user_obj):
         if '@' in user_obj['name']:
             user_obj['name'] = user_obj['name'].split('@')[0]
@@ -218,15 +314,17 @@ class UserManager:
         users = json.loads(get_users_result.content.decode('utf-8'))
         return users
 
-    @sleep_and_retry
-    @limits(calls=1000, period=SECONDS_IN_HOUR)
-    def add_test_user(self, user_to_copy):
-        user_name = user_to_copy['login_name'].split('@')[0]
+    def add_test_user(self):
+        user_to_upload = self._test_users_to_upload.get_next()
+        user_name = user_to_upload['login_name'].split('@')[0]
         new_user = {
-            'name': 'tu_{}'.format(user_name),
-            'email': '{}@bgriner.zscalerthree.net'.format(user_name),
-            'department': {'id': 21826133, 'name': 'test_dep_1'},
-            'groups': [{'id': 21826124, 'name': 'group_mod_test_1'}],
+            'name': 'test_user_{}'.format(user_name),
+            'email': '{}@bgriner.zscalerthree.net'.format('test___' + user_name),
+            # 'department': {'id': 21826133, 'name': 'test_dep_1'},
+            'groups': [{'id': 23527799, 'name': 'group_mod_test_9'}],
+            # 'department': {'id': 23900665, 'name': 'test_dep_3'},
+            # 'department': {'id': 23900667, 'name': 'test_dep_4'},
+            'department': {'id': 23900668, 'name': 'test_dep_5'},
             'comments': 'asdas',
             'adminUser': False,
             'password': '1DPUA2UDPA3*'
@@ -236,10 +334,10 @@ class UserManager:
                                               json=new_user)
         print('TEST USER POST RESULT: {}'.format(post_user_result.status_code))
 
-    def group_to_dept(self, u, p, k, start=1, end=10000, psize=None, file_path=None):
+    def group_to_dept(self, start=1, end=10000, psize=None, file_path=None):
         if psize is not None:
             self._page_size = psize
-        self.start_auth_session(u=u, p=p, k=k)
+        self.start_auth_session()
         dept_name = self.get_department_user_selection()
         input_groups = self.get_groups_user_selection()
         if file_path is None:
@@ -248,10 +346,10 @@ class UserManager:
                                                start=start,
                                                end=end)
 
-    def remove_email_from_user_name(self, u, p, k, start=1, end=10000, psize=None, file_path=None):
+    def remove_email_from_user_name(self, start=1, end=10000, psize=None, file_path=None):
         if psize is not None:
             self._page_size = psize
-        self.start_auth_session(u=u, p=p, k=k)
+        self.start_auth_session()
         self.get_and_modify_user_name_from_api(start=start, end=end)
 
     def get_groups_user_selection(self):
@@ -275,10 +373,17 @@ class UserManager:
         return dept_name
 
     def bulk_add_test_users(self, bulk_users_file_path='tests/resources/17k_users.json'):
+        self.start_auth_session()
+        self.load_test_users_to_post(bulk_users_file_path)
+        from twisted.internet.task import LoopingCall
+        from twisted.internet import reactor
+        lc = LoopingCall(self.add_test_user)
+        lc.start(3.5)
+        reactor.run()
+
+    def load_test_users_to_post(self, bulk_users_file_path):
         with open(bulk_users_file_path, 'r') as users_f:
-            data = json.load(users_f)
-            for user in data:
-                self.add_test_user(user_to_copy=user)
+            self._test_users_to_upload = TestUserUpload(users_to_upload=json.load(users_f))
 
     @sleep_and_retry
     @limits(calls=10, period=SECONDS_IN_HOUR)
