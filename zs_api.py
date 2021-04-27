@@ -6,6 +6,7 @@ from ratelimit import limits, sleep_and_retry
 import requests
 import sys
 import time
+from urllib.parse import quote
 
 HEADERS = {
     'content-type': "application/json",
@@ -196,12 +197,13 @@ class UserManager:
             json.dump(progress, progress_file)
 
     def load_page_progress(self):
-        if os.path.exists(UserManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(UserManager.DEPT_GROUP_PROGRESS_FILE):
+        if os.path.exists(UserManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(
+                UserManager.DEPT_GROUP_PROGRESS_FILE):
             with open(UserManager.DEPT_GROUP_PROGRESS_FILE, 'r') as progress_file:
                 progress_data = json.load(progress_file)
                 return progress_data['department'], progress_data['page']
         else:
-            return None, 0
+            return None, 1
 
     def groups_for_dept_exist(self):
         self.get_departments()
@@ -227,8 +229,8 @@ class UserManager:
         if dept_name is not None:
             start_dept_idx = self._departments_list.index(self._departments_dict[dept_name])
 
-        start_page = 0
-        if last_page != 0:
+        start_page = 1
+        if last_page != 1:
             start_page = last_page
 
         for department in self._departments_list[start_dept_idx:]:
@@ -239,7 +241,7 @@ class UserManager:
                                       group_to_add=department_group,
                                       input_department=current_dept_name)
             # after first continued department start with page 0
-            start_page = 0
+            start_page = 1
 
     def add_department_group(self, start_page, group_to_add, input_department):
         page_number = start_page
@@ -251,6 +253,7 @@ class UserManager:
                 break
             for user in users_data:
                 try:
+                    # time.sleep(2)
                     self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
                 except Exception as exception:
                     print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
@@ -283,6 +286,7 @@ class UserManager:
             user_obj['groups'] = []
         if group_to_add not in user_obj['groups']:
             user_obj['groups'].append(group_to_add)
+            print('UPDATING USER {} WITH GROUP {}'.format(user_obj['email'], group_to_add_name))
             put_user_result = self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
                                                 headers=HEADERS,
                                                 json=user_obj)
@@ -303,11 +307,11 @@ class UserManager:
             print('USER NAME {} NOT UPDATED'.format(user_obj['name']))
 
     @sleep_and_retry
-    @limits(calls=1, period=1)
+    @limits(calls=1, period=5)
     def get_users_page_to_modify(self, input_department=None, page_number=1):
         pagination = 'page={page_no}&pageSize={page_size}'.format(page_no=page_number, page_size=self._page_size)
         if input_department is not None:
-            paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + input_department + '&' + pagination])
+            paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + quote(input_department) + '&' + pagination])
         else:
             paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT + '?' + pagination])
         get_users_result = self._session.get(url=paginated_url, headers=HEADERS)
