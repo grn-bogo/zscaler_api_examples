@@ -3,6 +3,7 @@ import fire
 import json
 import os
 from ratelimit import limits, sleep_and_retry
+import re
 import requests
 import sys
 import time
@@ -13,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerthree.net/api/v1'
+API_URL = 'https://admin.zscalerbeta.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -107,6 +108,10 @@ class UserManager:
 
     def __del__(self):
         self._session.close()
+
+    @staticmethod
+    def remove_scim_dept_data(department_name):
+        return re.sub('[{}]', '', department_name)
 
     # move this to class aggregating managers
     def start_auth_session(self):
@@ -208,14 +213,18 @@ class UserManager:
     def groups_for_dept_exist(self):
         self.get_departments()
         self.get_groups()
-        departments_names = set(self._departments_dict.keys())
-        group_names = set(self._groups_dict.keys())
+        no_scim_chars_depts = map(UserManager.remove_scim_dept_data, self._departments_dict.keys())
+        no_scim_chars_groups = map(UserManager.remove_scim_dept_data, self._groups_dict.keys())
+        departments_names = set(no_scim_chars_depts)
+        group_names = set(no_scim_chars_groups)
         # default depratment Service Admin needs to be excluded from this check
         # departments_names.remove('Service Admin')
         diff = departments_names.difference(group_names)
         if len(diff):
-            print('MISSING GROUPS FOR DEPARTMENTS: ')
-            print(diff)
+            print('THE FOLLOWING GROUPS NEED TO BE ADDED TO RUN THE SCRIPT:')
+            for group in diff:
+                print(group)
+            print('EXITING')
             sys.exit(-1)
 
     def add_user_dept_group(self, page_size=None):
@@ -236,7 +245,13 @@ class UserManager:
         for department in self._departments_list[start_dept_idx:]:
             current_dept_name = department['name']
             print('STARING DEPARTMENT GROUP INSERT FOR DEPARTMENT {} AT PAGE {}'.format(current_dept_name, start_page))
-            department_group = self._groups_dict[current_dept_name]
+
+            clean_dept_name = UserManager.remove_scim_dept_data(current_dept_name)
+            if current_dept_name in self._groups_dict:
+                department_group = self._groups_dict[current_dept_name]
+            else:
+                department_group = self._groups_dict[clean_dept_name]
+
             self.add_department_group(start_page=start_page,
                                       group_to_add=department_group,
                                       input_department=current_dept_name)
