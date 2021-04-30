@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -190,7 +190,7 @@ class UserManager:
                 break
             for user in users_data:
                 try:
-                    self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
+                    self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
                 except Exception as exception:
                     print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
                     continue
@@ -268,8 +268,7 @@ class UserManager:
                 break
             for user in users_data:
                 try:
-                    # time.sleep(2)
-                    self.update_user_with_group(user_obj=user, group_to_add_name=group_to_add_name)
+                    self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
                 except Exception as exception:
                     print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
                     continue
@@ -295,17 +294,20 @@ class UserManager:
 
     @sleep_and_retry
     @limits(calls=50, period=THREE_MINUTES)
-    def update_user_with_group(self, user_obj, group_to_add_name):
+    def update_user_data(self, user_obj):
+        return self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
+                                 headers=HEADERS,
+                                 json=user_obj)
+
+    def add_user_to_group(self, user_obj, group_to_add_name):
         group_to_add = self.groups[group_to_add_name]
         if 'groups' not in user_obj or user_obj['groups'] is None:
             user_obj['groups'] = []
         if group_to_add not in user_obj['groups']:
             user_obj['groups'].append(group_to_add)
             print('UPDATING USER {} WITH GROUP {}'.format(user_obj['email'], group_to_add_name))
-            put_user_result = self._session.put(url=self.USER_PUT_ENDPOINT.format(user_obj['id']),
-                                                headers=HEADERS,
-                                                json=user_obj)
-            print('USER PUT UPDATE RESULT: {}'.format(put_user_result.status_code))
+            update_result = self.update_user_data(user_obj=user_obj)
+            print('USER PUT UPDATE RESULT: {}'.format(update_result.status_code))
         else:
             print('USER {} ALREADY IN GROUP: {}'.format(user_obj['name'], str(group_to_add)))
 
@@ -322,11 +324,12 @@ class UserManager:
             print('USER NAME {} NOT UPDATED'.format(user_obj['name']))
 
     @sleep_and_retry
-    @limits(calls=1, period=5)
+    @limits(calls=1, period=6)
     def get_users_page_to_modify(self, input_department=None, page_number=1):
         pagination = 'page={page_no}&pageSize={page_size}'.format(page_no=page_number, page_size=self._page_size)
         if input_department is not None:
-            paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT, '?dept=' + quote(input_department) + '&' + pagination])
+            paginated_url = '/'.join(
+                [API_URL, self.USERS_ENDPOINT, '?dept=' + quote(input_department) + '&' + pagination])
         else:
             paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT + '?' + pagination])
         get_users_result = self._session.get(url=paginated_url, headers=HEADERS)
