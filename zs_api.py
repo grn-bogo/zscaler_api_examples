@@ -258,6 +258,14 @@ class UserManager:
             # after first continued department start with page 0
             start_page = 1
 
+    def remove_non_dept_four_char_groups(self, user, department):
+        if len(department) == 4 and user['groups'] is not None:
+            modified = filter(lambda group: group['name'] == department or len(group['name']) != 4, user['groups'])
+            user['groups'] = list(modified)
+            print('REMOVED DEPT GROUPS, REMAINING GROUPS ARE {}'.format(user['groups']))
+            return True
+        return False
+
     def add_department_group(self, start_page, group_to_add, input_department):
         page_number = start_page
         while True:
@@ -268,7 +276,12 @@ class UserManager:
                 break
             for user in users_data:
                 try:
-                    self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
+                    groups_removed = self.remove_non_dept_four_char_groups(user=user, department=input_department)
+                    groups_added = self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
+                    if groups_removed or groups_added:
+                        update_result = self.update_user_data(user_obj=user)
+                        print('USER PUT UPDATE RESULT: {}'.format(update_result.status_code))
+
                 except Exception as exception:
                     print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
                     continue
@@ -306,10 +319,10 @@ class UserManager:
         if group_to_add not in user_obj['groups']:
             user_obj['groups'].append(group_to_add)
             print('UPDATING USER {} WITH GROUP {}'.format(user_obj['email'], group_to_add_name))
-            update_result = self.update_user_data(user_obj=user_obj)
-            print('USER PUT UPDATE RESULT: {}'.format(update_result.status_code))
+            return True
         else:
             print('USER {} ALREADY IN GROUP: {}'.format(user_obj['name'], str(group_to_add)))
+            return False
 
     @sleep_and_retry
     @limits(calls=50, period=THREE_MINUTES)
