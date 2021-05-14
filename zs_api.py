@@ -82,9 +82,13 @@ class DepartmentInterationStatus:
         self.current_department = departments_list[0]
 
 
-class UserManager:
+class APIManager:
     SECONDS_IN_HOUR = 60 * 60
     THREE_MINUTES = 3 * 60
+
+    LOCATIONS_ENDPOINT = 'locations'
+    LOCATIONS_ENDPOINT_URL = '/'.join([API_URL, LOCATIONS_ENDPOINT])
+    LOCATION_ENDPOINT_URL = '/'.join([API_URL, LOCATIONS_ENDPOINT, '{}'])
 
     DEPARTMENTS_ENDPOINT = 'departments'
     DEPARTMENTS_ENDPOINT_URL = '/'.join([API_URL, DEPARTMENTS_ENDPOINT])
@@ -96,8 +100,12 @@ class UserManager:
 
     DEPT_GROUP_PROGRESS_FILE = 'add_dept_group_progress'
 
+    UNAUTH_DEPT_NAME = 'Unauthenticated Transactions'
+    ADMIN_DEPT_NAME = 'Service Admin'
+
     def __init__(self, u, p, k):
         self._session = None
+        self._locations_list = None
         self._departments_list = None
         self._departments_dict = None
         self._groups_dict = None
@@ -198,13 +206,13 @@ class UserManager:
 
     def save_page_progress(self, department_name, page):
         progress = {'department': department_name, 'page': page}
-        with open(UserManager.DEPT_GROUP_PROGRESS_FILE, 'w') as progress_file:
+        with open(APIManager.DEPT_GROUP_PROGRESS_FILE, 'w') as progress_file:
             json.dump(progress, progress_file)
 
     def load_page_progress(self):
-        if os.path.exists(UserManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(
-                UserManager.DEPT_GROUP_PROGRESS_FILE):
-            with open(UserManager.DEPT_GROUP_PROGRESS_FILE, 'r') as progress_file:
+        if os.path.exists(APIManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(
+                APIManager.DEPT_GROUP_PROGRESS_FILE):
+            with open(APIManager.DEPT_GROUP_PROGRESS_FILE, 'r') as progress_file:
                 progress_data = json.load(progress_file)
                 return progress_data['department'], progress_data['page']
         else:
@@ -213,13 +221,23 @@ class UserManager:
     def groups_for_dept_exist(self):
         self.get_departments()
         self.get_groups()
-        no_scim_chars_depts = map(UserManager.remove_scim_dept_data, self._departments_dict.keys())
-        no_scim_chars_groups = map(UserManager.remove_scim_dept_data, self._groups_dict.keys())
+        no_scim_chars_depts = map(APIManager.remove_scim_dept_data, self._departments_dict.keys())
+        no_scim_chars_groups = map(APIManager.remove_scim_dept_data, self._groups_dict.keys())
         departments_names = set(no_scim_chars_depts)
         group_names = set(no_scim_chars_groups)
         # default depratment Service Admin needs to be excluded from this check
         # departments_names.remove('Service Admin')
+        if APIManager.UNAUTH_DEPT_NAME in departments_names:
+            departments_names.remove(APIManager.UNAUTH_DEPT_NAME)
+        if APIManager.UNAUTH_DEPT_NAME in group_names:
+            group_names.remove(APIManager.UNAUTH_DEPT_NAME)
+        print('GROUP NAMES')
+        print(group_names)
+        print('DEPARTMENT NAMES')
+        print(departments_names)
         diff = departments_names.difference(group_names)
+        print('DIFF')
+        print(diff)
         if len(diff):
             print('THE FOLLOWING GROUPS NEED TO BE ADDED TO RUN THE SCRIPT:')
             for group in diff:
@@ -244,9 +262,12 @@ class UserManager:
 
         for department in self._departments_list[start_dept_idx:]:
             current_dept_name = department['name']
+            if current_dept_name == APIManager.UNAUTH_DEPT_NAME or current_dept_name == APIManager.ADMIN_DEPT_NAME:
+                continue
+
             print('STARING DEPARTMENT GROUP INSERT FOR DEPARTMENT {} AT PAGE {}'.format(current_dept_name, start_page))
 
-            clean_dept_name = UserManager.remove_scim_dept_data(current_dept_name)
+            clean_dept_name = APIManager.remove_scim_dept_data(current_dept_name)
             if current_dept_name in self._groups_dict:
                 department_group = self._groups_dict[current_dept_name]
             else:
@@ -434,6 +455,19 @@ class UserManager:
             print('BULK DELETE USERS RESULT: {}'.format(blk_del_result.status_code))
         time.sleep(61)
 
+    def clone_sublocations(self, source_loc, traget_loc):
+        self.start_auth_session()
+
+    def check_source_and_target_loc(self, source_loc, target_loc):
+        pass
+
+    def get_locations_list(self):
+        try:
+            self._locations_list = self._session.get(url=self.LOCATIONS_ENDPOINT_URL, headers=HEADERS)
+        except Exception as exception:
+            print('EXCEPTION AT GETTING LOCATIONS: {}'.format(exception))
+            sys.exit(-1)
+
 
 if __name__ == '__main__':
-    fire.Fire(component=UserManager)
+    fire.Fire(component=APIManager)
