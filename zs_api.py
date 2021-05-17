@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerthree.net/api/v1'
+API_URL = 'https://admin.zscalerbeta.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -280,6 +280,8 @@ class APIManager:
             start_page = 1
 
     def remove_non_dept_four_char_groups(self, user, department):
+        print("CLEANING UP GROUPS FOR USER: {} DEP: {}".format(user, department))
+        print("USER GROUPS: {}".format(user['groups']))
         if len(department) == 4 and user['groups'] is not None:
             modified = filter(lambda group: group['name'] == department or len(group['name']) != 4, user['groups'])
             user['groups'] = list(modified)
@@ -334,6 +336,7 @@ class APIManager:
                                  json=user_obj)
 
     def add_user_to_group(self, user_obj, group_to_add_name):
+        print("ADDING GROUP: {} to USER: {}".format(user_obj, group_to_add_name))
         group_to_add = self.groups[group_to_add_name]
         if 'groups' not in user_obj or user_obj['groups'] is None:
             user_obj['groups'] = []
@@ -394,6 +397,7 @@ class APIManager:
         if psize is not None:
             self._page_size = psize
         self.start_auth_session()
+        print('')
         dept_name = self.get_department_user_selection()
         input_groups = self.get_groups_user_selection()
         if file_path is None:
