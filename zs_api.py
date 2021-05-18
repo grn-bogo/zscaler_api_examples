@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -89,6 +89,7 @@ class APIManager:
     LOCATIONS_ENDPOINT = 'locations'
     LOCATIONS_ENDPOINT_URL = '/'.join([API_URL, LOCATIONS_ENDPOINT])
     LOCATION_ENDPOINT_URL = '/'.join([API_URL, LOCATIONS_ENDPOINT, '{}'])
+    SUBLOCATIONS_ENDPOINT_URL = '/'.join([API_URL, LOCATIONS_ENDPOINT, '{}', 'sublocations'])
 
     DEPARTMENTS_ENDPOINT = 'departments'
     DEPARTMENTS_ENDPOINT_URL = '/'.join([API_URL, DEPARTMENTS_ENDPOINT])
@@ -106,6 +107,8 @@ class APIManager:
     def __init__(self, u, p, k):
         self._session = None
         self._locations_list = None
+        self._locations_dict = None
+        self._sublocations_map = {}
         self._departments_list = None
         self._departments_dict = None
         self._groups_dict = None
@@ -165,6 +168,15 @@ class APIManager:
         if self._departments_list is None:
             self.get_departments()
         return self._departments_list
+
+    @property
+    def locations(self):
+        if self._locations_list is None:
+            self.get_locations()
+        return self._locations_list
+
+    def _location_by_name(self, loc_name):
+        return self._locations_dict[loc_name]
 
     def _validate_groups(self, input_groups):
         if not set(input_groups).issubset(self.groups.keys()):
@@ -459,8 +471,51 @@ class APIManager:
             print('BULK DELETE USERS RESULT: {}'.format(blk_del_result.status_code))
         time.sleep(61)
 
-    def clone_sublocations(self, source_loc, traget_loc):
+    def clone_sublocations(self, source_loc, target_loc):
         self.start_auth_session()
+        self.validate_src_and_tgt_locs_exist(source_loc, target_loc)
+
+        source_loc_obj = self._location_by_name(source_loc)
+        target_loc_obj = self._location_by_name(target_loc)
+        source_sublocs = self.get_sublocations(source_loc_obj)
+        for loc_to_clone in source_sublocs:
+            if loc_to_clone['name'] == 'other':
+                continue
+            loc_to_clone['parentId'] = target_loc_obj['id']
+            create_loc_result = self._session.post(url=self.LOCATIONS_ENDPOINT_URL,
+                                                   headers=HEADERS,
+                                                   json=loc_to_clone)
+            print(F'CREATE SUBLOCATION RESULT CODE: {create_loc_result.status_code}')
+            if create_loc_result.status_code != 200:
+                print(F'OPERATION RESULT: {create_loc_result.content}')
+
+    def validate_src_and_tgt_locs_exist(self, source_loc, target_loc):
+        print(self.locations)
+        if source_loc not in self._locations_dict:
+            print(F'LOCATION {source_loc} DOES NOT EXIST. EXITING')
+            sys.exit(-1)
+        if target_loc not in self._locations_dict:
+            print(F'LOCATION {target_loc} DOES NOT EXIST. EXITING')
+            sys.exit(-1)
+
+    @sleep_and_retry
+    @limits(calls=1, period=1)
+    def get_sublocations(self, location_obj):
+        subloc_url = self.SUBLOCATIONS_ENDPOINT_URL.format(location_obj['id'])
+        get_groups_results = self._session.get(url=subloc_url,
+                                               headers=HEADERS)
+        sublocs_obj = json.loads(get_groups_results.content.decode('utf-8'))
+        self._sublocations_map[location_obj['id']] = sublocs_obj
+        # self._locations_dict = {g['name']: g for g in self._locations_list}
+        return self._sublocations_map[location_obj['id']]
+
+    @sleep_and_retry
+    @limits(calls=1, period=1)
+    def get_locations(self):
+        get_groups_results = self._session.get(url=self.LOCATIONS_ENDPOINT_URL,
+                                               headers=HEADERS)
+        self._locations_list = json.loads(get_groups_results.content.decode('utf-8'))
+        self._locations_dict = {g['name']: g for g in self._locations_list}
 
     def check_source_and_target_loc(self, source_loc, target_loc):
         pass
