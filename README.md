@@ -3,6 +3,43 @@
 - Python 3.8 or later
 - modules from requirements.txt (pip install -r requirements.txt)
 
+
+## Cloning sublocations between locations
+
+### End result
+
+Sublocations from source location are copied into target location provided that thier parameters are valid for the target location.
+Example run for two locations has 2 sublocations copied and one omitted because of an overlapping IP range with an already existing location.
+
+### Example data & example run:
+
+1. Source location - needs to be an existing location that contains one or more sublocations:
+    - test-source-location-1:
+        - test-1-sublocation-1, IP addresses: 10.10.11.0 - 10.10.11.255
+        - test-1-sublocation-2, IP addresses: 10.10.12.0 - 10.10.12.255
+        - test-1-sublocation-3, IP addresses: 10.10.13.0 - 10.10.13.255
+2. Target location - needs to be an existing location:
+    - test-target-location-2:
+        - test-2-sublocation-1, IP addresses: 10.10.13.0 - 10.10.13.255
+        - test-2-sublocation-2, IP addresses: 10.10.14.0 - 10.10.14.255
+        
+Run the script using the following command and specifying your API credentials:
+
+```bash
+python zs_api.py clone_sublocations -k <organiztions API key> -u <admin user name> -p <admin user password> test-source-location-1 test-target-location-2
+```
+If both target and source locations exist the script will proceed adding source's sublocations to the target locations and display progress and any errors.
+
+
+As a result of the example run the example target location will be update to:
+- test-target-location-2:
+    - test-1-sublocation-1, IP addresses: 10.10.11.0 - 10.10.11.255
+    - test-1-sublocation-2, IP addresses: 10.10.12.0 - 10.10.12.255
+    - test-2-sublocation-1, IP addresses: 10.10.13.0 - 10.10.13.255
+    - test-2-sublocation-2, IP addresses: 10.10.14.0 - 10.10.14.255
+
+
+
 ## Grouping users from a selected department
 
 ### End result
@@ -25,7 +62,7 @@ enable ZTunnel 2.0. The example assumes 17500 users in the department, 500 users
  - group_7
 
 
-Run the script using the following command specifing your credentials, 
+Run the script using the following command specifing your API credentials, 
 start at page 1 and end at page 35 (7 groups, each 5 pages, each page holds 500 users)
 
 ```bash
