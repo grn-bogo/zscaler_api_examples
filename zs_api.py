@@ -103,16 +103,18 @@ class APIManager:
 
     UNAUTH_DEPT_NAME = 'Unauthenticated Transactions'
     ADMIN_DEPT_NAME = 'Service Admin'
+    DUPLICATE_DEP = '.duplicate'
+    DELETED_DEP = '{IDP:'
 
     def __init__(self, u, p, k):
         self._session = None
         self._locations_list = None
         self._locations_dict = None
         self._sublocations_map = {}
-        self._departments_list = None
+        self._departments_list = []
         self._departments_dict = None
+        self._groups_list = []
         self._groups_dict = None
-        self._groups_list = None
         self._page_size = 500
         self._login_data = LoginData(usr=u, pwd=p, api_key=k)
         self._test_users_to_upload = None
@@ -127,6 +129,9 @@ class APIManager:
     # move this to class aggregating managers
     def start_auth_session(self):
         self._session = requests.session()
+        self._session.verify = False
+        from urllib3.exceptions import InsecureRequestWarning
+        requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
         auth_result = self._session.post(url=AUTH_URL,
                                          headers=HEADERS,
                                          data=self._login_data.to_json())
@@ -135,21 +140,39 @@ class APIManager:
             print("Authentication failed, exiting!")
             sys.exit(-1)
 
-    @sleep_and_retry
-    @limits(calls=1, period=1)
     def get_departments(self):
-        get_departments_results = self._session.get(url=self.DEPARTMENTS_ENDPOINT_URL,
-                                                    headers=HEADERS)
-        self._departments_list = json.loads(get_departments_results.content.decode('utf-8'))
+        page_no = 1
+        while True:
+            pagination = F'page={page_no}&pageSize={self._page_size}'
+            dep_paginated_url = self.DEPARTMENTS_ENDPOINT_URL + '?' + pagination
+            departments_page = self.get_user_management_data(data_url=dep_paginated_url)
+            if len(departments_page) == 0:
+                break
+            self._departments_list = self._departments_list + departments_page
+            page_no = page_no + 1
         self._departments_dict = {d['name']: d for d in self._departments_list}
 
-    @sleep_and_retry
-    @limits(calls=1, period=1)
     def get_groups(self):
-        get_groups_results = self._session.get(url=self.GROUPS_ENDPOINT_URL,
-                                               headers=HEADERS)
-        self._groups_list = json.loads(get_groups_results.content.decode('utf-8'))
+        page_no = 1
+        while True:
+            pagination = F'page={page_no}&pageSize={self._page_size}'
+            group_paginated_url = self.GROUPS_ENDPOINT_URL + '?' + pagination
+            groups_page = self.get_user_management_data(data_url=group_paginated_url)
+            if len(groups_page) == 0:
+                break
+            self._groups_list = self.groups_list + groups_page
+            page_no = page_no + 1
         self._groups_dict = {g['name']: g for g in self._groups_list}
+
+    @sleep_and_retry
+    @limits(calls=1, period=2)
+    def get_user_management_data(self, data_url):
+        results = self._session.get(url=data_url, headers=HEADERS)
+        if results.status_code != 200:
+            print(F'ERROR CODE {results.status_code} AT COLLECTING DATA FROM {data_url}')
+            sys.exit(-1)
+        object_list = json.loads(results.content.decode('utf-8'))
+        return object_list
 
     @property
     def groups(self):
@@ -275,6 +298,8 @@ class APIManager:
         for department in self._departments_list[start_dept_idx:]:
             current_dept_name = department['name']
             if current_dept_name == APIManager.UNAUTH_DEPT_NAME or current_dept_name == APIManager.ADMIN_DEPT_NAME:
+                continue
+            if APIManager.DUPLICATE_DEP in current_dept_name or APIManager.DELETED_DEP in current_dept_name:
                 continue
 
             print('STARING DEPARTMENT GROUP INSERT FOR DEPARTMENT {} AT PAGE {}'.format(current_dept_name, start_page))
