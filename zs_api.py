@@ -149,6 +149,7 @@ class APIManager:
             if len(departments_page) == 0:
                 break
             self._departments_list = self._departments_list + departments_page
+            print(F'GOT DEPS PAGE {page_no}, CONTENT: {departments_page}')
             page_no = page_no + 1
         self._departments_dict = {d['name']: d for d in self._departments_list}
 
@@ -161,6 +162,7 @@ class APIManager:
             if len(groups_page) == 0:
                 break
             self._groups_list = self.groups_list + groups_page
+            print(F'GOT GROUPS PAGE {page_no}, CONTENT: {groups_page}')
             page_no = page_no + 1
         self._groups_dict = {g['name']: g for g in self._groups_list}
 
