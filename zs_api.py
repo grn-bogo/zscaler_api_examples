@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -148,6 +148,10 @@ class APIManager:
             departments_page = self.get_user_management_data(data_url=dep_paginated_url)
             if len(departments_page) == 0:
                 break
+            # handling for a BUG in betacloud API that causes unauth dep to be returned for any page no
+            if len(departments_page) == 1:
+                if departments_page[0]['id'] == self._departments_list[-1]['id']:
+                    break
             self._departments_list = self._departments_list + departments_page
             print(F'GOT DEPS PAGE {page_no}, CONTENT: {departments_page}')
             page_no = page_no + 1
