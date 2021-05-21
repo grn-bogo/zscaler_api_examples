@@ -379,12 +379,19 @@ class APIManager:
                                  headers=HEADERS,
                                  json=user_obj)
 
+    @staticmethod
+    def user_is_in_group(group_obj, user):
+        for user_group in user['groups']:
+            if user_group['id'] == group_obj['id']:
+                return True
+        return False
+
     def add_user_to_group(self, user_obj, group_to_add_name):
         print("ADDING GROUP: {} to USER: {}".format(user_obj, group_to_add_name))
         group_to_add = self.groups[group_to_add_name]
         if 'groups' not in user_obj or user_obj['groups'] is None:
             user_obj['groups'] = []
-        if group_to_add not in user_obj['groups']:
+        if not APIManager.user_is_in_group(group_obj=group_to_add, user=user_obj):
             user_obj['groups'].append(group_to_add)
             print('UPDATING USER {} WITH GROUP {}'.format(user_obj['email'], group_to_add_name))
             return True
