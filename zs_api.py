@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -326,10 +326,11 @@ class APIManager:
         print("CLEANING UP GROUPS FOR USER: {} DEP: {}".format(user, department))
         print("USER GROUPS: {}".format(user['groups']))
         if len(department) == 4 and user['groups'] is not None:
-            modified = filter(lambda group: group['name'] == department or len(group['name']) != 4, user['groups'])
-            user['groups'] = list(modified)
-            print('REMOVED DEPT GROUPS, REMAINING GROUPS ARE {}'.format(user['groups']))
-            return True
+            modified = list(filter(lambda group: group['name'] == department or len(group['name']) != 4, user['groups']))
+            if len(user['groups']) != len(modified):
+                user['groups'] = modified
+                print('REMOVED DEPT GROUPS, REMAINING GROUPS ARE {}'.format(user['groups']))
+                return True
         return False
 
     def add_department_group(self, start_page, group_to_add, input_department):
