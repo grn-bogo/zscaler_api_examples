@@ -14,7 +14,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -135,7 +135,7 @@ class APIManager:
         auth_result = self._session.post(url=AUTH_URL,
                                          headers=HEADERS,
                                          data=self._login_data.to_json())
-        print('AUTH RESULT code {0}'.format(auth_result.status_code))
+        print(F'AUTH RESULT code {auth_result.status_code}')
         if auth_result.status_code != 200:
             print("Authentication failed, exiting!")
             sys.exit(-1)
@@ -347,10 +347,10 @@ class APIManager:
                     groups_added = self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
                     if groups_removed or groups_added:
                         update_result = self.update_user_data(user_obj=user)
-                        print('USER PUT UPDATE RESULT: {}'.format(update_result.status_code))
+                        print(F'USER PUT UPDATE RESULT: {update_result.status_code}')
 
                 except Exception as exception:
-                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
+                    print(F'EXCEPTION {exception} ON PUT USER {user} UPDATE ATTEMPT')
                     continue
             page_number += 1
             self.save_page_progress(input_department, page_number)
@@ -421,6 +421,8 @@ class APIManager:
         else:
             paginated_url = '/'.join([API_URL, self.USERS_ENDPOINT + '?' + pagination])
         get_users_result = self._session.get(url=paginated_url, headers=HEADERS)
+        if get_users_result.status_code != 200:
+            print(F'ERROR AT GET USERS PAGE: {get_users_result.status_code}')
         users = json.loads(get_users_result.content.decode('utf-8'))
         return users
 
@@ -442,6 +444,8 @@ class APIManager:
         post_user_result = self._session.post(url=self.USERS_ENDPOINT_URL,
                                               headers=HEADERS,
                                               json=new_user)
+        if post_user_result.status_code != 200:
+            print(F'ERROR AT ADDING TEST USER: {post_user_result.status_code}')
         print('TEST USER POST RESULT: {}'.format(post_user_result.status_code))
 
     def group_to_dept(self, start=1, end=10000, psize=None, file_path=None):
@@ -543,6 +547,8 @@ class APIManager:
         subloc_url = self.SUBLOCATIONS_ENDPOINT_URL.format(location_obj['id'])
         get_groups_results = self._session.get(url=subloc_url,
                                                headers=HEADERS)
+        if get_groups_results.status_code != 200:
+            print(F'ERROR AT GET USERS PAGE: {get_groups_results.status_code}')
         sublocs_obj = json.loads(get_groups_results.content.decode('utf-8'))
         self._sublocations_map[location_obj['id']] = sublocs_obj
         # self._locations_dict = {g['name']: g for g in self._locations_list}
@@ -553,6 +559,8 @@ class APIManager:
     def get_locations(self):
         get_groups_results = self._session.get(url=self.LOCATIONS_ENDPOINT_URL,
                                                headers=HEADERS)
+        if get_groups_results.status_code != 200:
+            print(F'ERROR AT GET USERS PAGE: {get_groups_results.status_code}')
         self._locations_list = json.loads(get_groups_results.content.decode('utf-8'))
         self._locations_dict = {g['name']: g for g in self._locations_list}
 
