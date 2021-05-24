@@ -292,7 +292,8 @@ class APIManager:
         with open(departments_csv_file, 'r') as deps_f:
             reader = csv.reader(deps_f)
             data = [row[0] for row in reader]
-            self._selected_departments = [dep for dep in data if dep in self._departments_dict]
+            print(F"SELECTED DEPS FILE INPUT: {data}")
+            self._selected_departments = [dep.strip('"') for dep in data if dep in self._departments_dict]
         print(F'WILL PROCESS DEPARTMENTS: {self._selected_departments}')
 
     def should_process(self, dep_name):
