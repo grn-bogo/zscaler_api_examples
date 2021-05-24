@@ -111,6 +111,7 @@ class APIManager:
         self._locations_list = None
         self._locations_dict = None
         self._sublocations_map = {}
+        self._selected_departments = None
         self._departments_list = []
         self._departments_dict = None
         self._groups_list = []
@@ -246,15 +247,15 @@ class APIManager:
             page_number += 1
 
     def save_page_progress(self, department_name, page):
-        progress = {'department': department_name, 'page': page}
+        progress = {'department': department_name, 'page': page, 'selected_departments': self._selected_departments}
         with open(APIManager.DEPT_GROUP_PROGRESS_FILE, 'w') as progress_file:
             json.dump(progress, progress_file)
 
     def load_page_progress(self):
-        if os.path.exists(APIManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(
-                APIManager.DEPT_GROUP_PROGRESS_FILE):
+        if os.path.exists(APIManager.DEPT_GROUP_PROGRESS_FILE) and os.path.isfile(APIManager.DEPT_GROUP_PROGRESS_FILE):
             with open(APIManager.DEPT_GROUP_PROGRESS_FILE, 'r') as progress_file:
                 progress_data = json.load(progress_file)
+                self._selected_departments = progress_data['selected_departments']
                 return progress_data['department'], progress_data['page']
         else:
             return None, 1
@@ -286,9 +287,22 @@ class APIManager:
             print('EXITING')
             sys.exit(-1)
 
-    def add_user_dept_group(self, page_size=None):
+    def parse_departments_to_process(self, departments_str):
+        departments_list = departments_str.split(',')
+        self._selected_departments = [dep for dep in departments_list if dep in self._departments_dict]
+        print(F'WILL PROCESS DEPARTMENTS: {self._selected_departments}')
+
+    def should_process(self, dep_name):
+        if self._selected_departments:
+            return dep_name in self._selected_departments
+        else:
+            return True
+
+    def add_user_dept_group(self, page_size=None, departments_to_process=None):
         self.start_auth_session()
         self.groups_for_dept_exist()
+        if departments_to_process:
+            self.parse_departments_to_process(departments_str=departments_to_process)
         if page_size is not None:
             self._page_size = page_size
 
@@ -307,6 +321,8 @@ class APIManager:
                 continue
             if APIManager.DUPLICATE_DEP in current_dept_name or APIManager.DELETED_DEP in current_dept_name:
                 continue
+            if not self.should_process(dep_name=current_dept_name):
+                continue
 
             print('STARING DEPARTMENT GROUP INSERT FOR DEPARTMENT {} AT PAGE {}'.format(current_dept_name, start_page))
 
@@ -319,17 +335,18 @@ class APIManager:
             self.add_department_group(start_page=start_page,
                                       group_to_add=department_group,
                                       input_department=current_dept_name)
-            # after first continued department start with page 0
+            # after first continued department start with page 1
             start_page = 1
 
     def remove_non_dept_four_char_groups(self, user, department):
-        print("CLEANING UP GROUPS FOR USER: {} DEP: {}".format(user, department))
-        print("USER GROUPS: {}".format(user['groups']))
-        if len(department) == 4 and user['groups'] is not None:
-            modified = list(filter(lambda group: group['name'] == department or len(group['name']) != 4, user['groups']))
-            if len(user['groups']) != len(modified):
+        user_groups = user['groups']
+        print(F'CLEANING UP GROUPS FOR USER: {user} DEP: {department}')
+        print(F'USER GROUPS: {user_groups}')
+        if len(department) == 4 and user_groups is not None:
+            modified = list(filter(lambda group: group['name'] == department or len(group['name']) != 4, user_groups))
+            if len(user_groups) != len(modified):
                 user['groups'] = modified
-                print('REMOVED DEPT GROUPS, REMAINING GROUPS ARE {}'.format(user['groups']))
+                print(F'REMOVED DEPT GROUPS, REMAINING GROUPS ARE {user_groups}')
                 return True
         return False
 
@@ -368,7 +385,7 @@ class APIManager:
                 try:
                     self.update_user_name(user_obj=user)
                 except Exception as exception:
-                    print('EXCEPTION ON PUT USER {} UPDATE ATTEMPT'.format(exception))
+                    print(F'EXCEPTION ON PUT USER {exception} UPDATE ATTEMPT')
                     continue
             page_number += 1
 
@@ -387,7 +404,7 @@ class APIManager:
         return False
 
     def add_user_to_group(self, user_obj, group_to_add_name):
-        print("ADDING GROUP: {} to USER: {}".format(user_obj, group_to_add_name))
+        print(F'ADDING GROUP: {group_to_add_name} to USER: {user_obj}')
         group_to_add = self.groups[group_to_add_name]
         if 'groups' not in user_obj or user_obj['groups'] is None:
             user_obj['groups'] = []
