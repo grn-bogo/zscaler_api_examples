@@ -1,3 +1,4 @@
+import csv
 import datetime
 import fire
 import json
@@ -287,9 +288,11 @@ class APIManager:
             print('EXITING')
             sys.exit(-1)
 
-    def parse_departments_to_process(self, departments_str):
-        departments_list = departments_str.split(',')
-        self._selected_departments = [dep for dep in departments_list if dep in self._departments_dict]
+    def parse_departments_to_process(self, departments_csv_file):
+        with open(departments_csv_file, 'r') as deps_f:
+            reader = csv.reader(deps_f)
+            data = [row for row in reader][0]
+            self._selected_departments = [dep for dep in data if dep in self._departments_dict]
         print(F'WILL PROCESS DEPARTMENTS: {self._selected_departments}')
 
     def should_process(self, dep_name):
@@ -302,7 +305,7 @@ class APIManager:
         self.start_auth_session()
         self.groups_for_dept_exist()
         if departments_to_process:
-            self.parse_departments_to_process(departments_str=departments_to_process)
+            self.parse_departments_to_process(departments_csv_file=departments_to_process)
         if page_size is not None:
             self._page_size = page_size
 
