@@ -15,7 +15,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -262,9 +262,10 @@ class APIManager:
             return None, 1
 
     def groups_for_dept_exist(self):
-        self.get_departments()
-        self.get_groups()
-        no_scim_chars_depts = map(APIManager.remove_scim_dept_data, self._departments_dict.keys())
+        if self._selected_departments:
+            no_scim_chars_depts = map(APIManager.remove_scim_dept_data, self._selected_departments)
+        else:
+            no_scim_chars_depts = map(APIManager.remove_scim_dept_data, self._departments_dict.keys())
         no_scim_chars_groups = map(APIManager.remove_scim_dept_data, self._groups_dict.keys())
         departments_names = set(no_scim_chars_depts)
         group_names = set(no_scim_chars_groups)
@@ -304,9 +305,12 @@ class APIManager:
 
     def add_user_dept_group(self, page_size=None, departments_to_process=None):
         self.start_auth_session()
-        self.groups_for_dept_exist()
+        self.get_departments()
+        self.get_groups()
+
         if departments_to_process:
             self.parse_departments_to_process(departments_csv_file=departments_to_process)
+        self.groups_for_dept_exist()
         if page_size is not None:
             self._page_size = page_size
 
