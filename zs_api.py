@@ -107,6 +107,8 @@ class APIManager:
     DUPLICATE_DEP = '.duplicate'
     DELETED_DEP = '{IDP:'
 
+    MAX_RETRIES = 1000
+
     def __init__(self, u, p, k):
         self._session = None
         self._locations_list = None
@@ -120,6 +122,7 @@ class APIManager:
         self._page_size = 500
         self._login_data = LoginData(usr=u, pwd=p, api_key=k)
         self._test_users_to_upload = None
+        self.retry_count = APIManager.MAX_RETRIES
 
     def __del__(self):
         self._session.close()
@@ -303,7 +306,7 @@ class APIManager:
         else:
             return True
 
-    def add_user_dept_group(self, page_size=None, departments_to_process=None):
+    def add_user_dept_group(self, page_size=None, departments_to_process=None, retry_count=None):
         self.start_auth_session()
         self.get_departments()
         self.get_groups()
@@ -313,6 +316,8 @@ class APIManager:
         self.groups_for_dept_exist()
         if page_size is not None:
             self._page_size = page_size
+        if retry_count is not None and retry_count < APIManager.MAX_RETRIES:
+            self.retry_count = retry_count
 
         dept_name, last_page = self.load_page_progress()
         start_dept_idx = 0
@@ -366,14 +371,24 @@ class APIManager:
                                                        page_number=page_number)
             if len(users_data) == 0:
                 break
-            for user in users_data:
+            user_idx = 0
+            while True:
+                if user_idx == len(users_data):
+                    break
+                user = users_data[user_idx]
                 try:
                     groups_removed = self.remove_non_dept_four_char_groups(user=user, department=input_department)
                     groups_added = self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
                     if groups_removed or groups_added:
                         update_result = self.update_user_data(user_obj=user)
                         print(F'USER PUT UPDATE RESULT: {update_result.status_code}')
-
+                        if update_result != 200 and self.retry_count != 0:
+                            self.retry_count = self.retry_count - 1
+                            # do not move index forward, decrease retry_count
+                        else:
+                            user_idx = user_idx + 1
+                    else:
+                        user_idx = user_idx + 1
                 except Exception as exception:
                     print(F'EXCEPTION {exception} ON PUT USER {user} UPDATE ATTEMPT')
                     continue
