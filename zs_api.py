@@ -382,9 +382,9 @@ class APIManager:
                     if groups_removed or groups_added:
                         update_result = self.update_user_data(user_obj=user)
                         print(F'USER PUT UPDATE RESULT: {update_result.status_code}')
-                        if update_result != 200 and self.retry_count != 0:
+                        if update_result.status_code != 200 and self.retry_count != 0:
                             # do not move index forward, decrease retry_count
-                            print(F'RETRYING - LAST UPDATE RESULT: {update_result} - RETRY COUNT {self.retry_count}')
+                            print(F'RETRYING - LAST UPDATE RESULT: {update_result.status_code} - RETRY COUNT {self.retry_count}')
                             self.retry_count = self.retry_count - 1
                         else:
                             user_idx = user_idx + 1
