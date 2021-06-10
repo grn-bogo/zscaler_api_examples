@@ -1,3 +1,4 @@
+import copy
 import csv
 import datetime
 import fire
@@ -375,7 +376,7 @@ class APIManager:
             while True:
                 if user_idx == len(users_data):
                     break
-                user = users_data[user_idx]
+                user = copy.deepcopy(users_data[user_idx])
                 try:
                     groups_removed = self.remove_non_dept_four_char_groups(user=user, department=input_department)
                     groups_added = self.add_user_to_group(user_obj=user, group_to_add_name=group_to_add_name)
