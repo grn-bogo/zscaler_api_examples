@@ -16,7 +16,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerthree.net/api/v1'
+API_URL = 'https://admin.zscalerbeta.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
@@ -385,7 +385,8 @@ class APIManager:
                         print(F'USER PUT UPDATE RESULT: {update_result.status_code}')
                         if update_result.status_code != 200 and self.retry_count != 0:
                             # do not move index forward, decrease retry_count
-                            print(F'RETRYING - LAST UPDATE RESULT: {update_result.status_code} - RETRY COUNT {self.retry_count}')
+                            print(
+                                F'RETRYING - LAST UPDATE RESULT: {update_result.status_code} - RETRY COUNT {self.retry_count}')
                             self.retry_count = self.retry_count - 1
                         else:
                             user_idx = user_idx + 1
@@ -555,6 +556,26 @@ class APIManager:
                                                 headers=HEADERS)
             print('BULK DELETE USERS RESULT: {}'.format(blk_del_result.status_code))
         time.sleep(61)
+
+    def enable_ips_on_locations(self):
+        self.start_auth_session()
+        for location in self.locations:
+            print(location)
+            if 'ipsControl' not in location or not location['ipsControl']:
+                location['ipsControl'] = True
+                update_result = self.update_location(location)
+                if update_result.status_code == 200:
+                    print(F'SUCCESSFULLY UPDATED {location["name"]} to use IPS')
+                else:
+                    print(F'FAILED TO UPDATE {location["name"]} with IPS, result code: {update_result.status_code}')
+
+    @sleep_and_retry
+    @limits(calls=50, period=THREE_MINUTES)
+    def update_location(self, location):
+        update_result = self._session.put(url=self.LOCATION_ENDPOINT_URL.format(location['id']),
+                                          headers=HEADERS,
+                                          json=location)
+        return update_result
 
     def clone_sublocations(self, source_loc, target_loc):
         self.start_auth_session()
