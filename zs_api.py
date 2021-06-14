@@ -16,7 +16,7 @@ HEADERS = {
     # 'cache-control': "no-cache"
 }
 
-API_URL = 'https://admin.zscalerbeta.net/api/v1'
+API_URL = 'https://admin.zscalerthree.net/api/v1'
 AUTH_ENDPOINT = 'authenticatedSession'
 AUTH_URL = '/'.join([API_URL, AUTH_ENDPOINT])
 
