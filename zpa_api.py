@@ -44,16 +44,37 @@ class APIManager:
             print(F'AUTHENTICATION FAILED. RESPONSE CODE: {auth_result.status_code}')
             sys.exit(-1)
 
+    def port_ranges_str(self, ports_list):
+        port_ranges = []
+        for idx, port in enumerate(ports_list):
+            if idx % 2 == 0:
+                port_ranges.append(F'{ports_list[idx]}-{ports_list[idx - 1]}')
+        return port_ranges
+
     def dump_app_segments(self):
         self.authenticated_session()
         self.get_app_segments()
         with open(F'app_domians_dump_{self._tenant_id}.txt', 'w') as dump_file:
             for app_seg in self.app_segments:
-                dump_file.write(app_seg['name'])
+                dump_file.write(F"{app_seg['name']} ({app_seg['segmentGroupName']})")
                 dump_file.write('\n')
+                self.dump_port_ranges(app_seg, 'TCP', dump_file)
+                self.dump_port_ranges(app_seg, 'UDP', dump_file)
                 for domain in app_seg['domainNames']:
                     dump_file.write(domain)
                     dump_file.write('\n')
+
+    def dump_port_ranges(self, app_seg, proto, dump_file):
+        ports_key = None
+        if proto == 'UDP':
+            ports_key = 'udpPortRanges'
+        elif proto == 'TCP':
+            ports_key = 'tcpPortRanges'
+        if ports_key in app_seg:
+            port_ranges = self.port_ranges_str(app_seg[ports_key])
+            dump_file.write(F'{proto} PORT RANGES: {",".join(port_ranges)}')
+            dump_file.write('\n')
+
     @property
     def app_segments(self):
         if self._app_segments_list:
