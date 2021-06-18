@@ -570,7 +570,7 @@ class APIManager:
                     print(F'FAILED TO UPDATE {location["name"]} with IPS, result code: {update_result.status_code}')
 
     @sleep_and_retry
-    @limits(calls=40, period=THREE_MINUTES)
+    @limits(calls=50, period=THREE_MINUTES)
     def update_location(self, location):
         update_result = self._session.put(url=self.LOCATION_ENDPOINT_URL.format(location['id']),
                                           headers=HEADERS,
@@ -588,12 +588,17 @@ class APIManager:
             if loc_to_clone['name'] == 'other':
                 continue
             loc_to_clone['parentId'] = target_loc_obj['id']
-            create_loc_result = self._session.post(url=self.LOCATIONS_ENDPOINT_URL,
-                                                   headers=HEADERS,
-                                                   json=loc_to_clone)
-            print(F'CREATE SUBLOCATION RESULT CODE: {create_loc_result.status_code}')
-            if create_loc_result.status_code != 200:
-                print(F'OPERATION RESULT: {create_loc_result.content}')
+            self.create_location(loc_to_clone)
+
+    @sleep_and_retry
+    @limits(calls=50, period=THREE_MINUTES)
+    def create_location(self, loc_to_create):
+        create_loc_result = self._session.post(url=self.LOCATIONS_ENDPOINT_URL,
+                                               headers=HEADERS,
+                                               json=loc_to_create)
+        print(F'CREATE SUBLOCATION RESULT CODE: {create_loc_result.status_code}')
+        if create_loc_result.status_code != 200:
+            print(F'OPERATION RESULT: {create_loc_result.content}')
 
     def validate_src_and_tgt_locs_exist(self, source_loc, target_loc):
         print(self.locations)
