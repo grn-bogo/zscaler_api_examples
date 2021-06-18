@@ -570,7 +570,7 @@ class APIManager:
                     print(F'FAILED TO UPDATE {location["name"]} with IPS, result code: {update_result.status_code}')
 
     @sleep_and_retry
-    @limits(calls=50, period=THREE_MINUTES)
+    @limits(calls=40, period=THREE_MINUTES)
     def update_location(self, location):
         update_result = self._session.put(url=self.LOCATION_ENDPOINT_URL.format(location['id']),
                                           headers=HEADERS,
