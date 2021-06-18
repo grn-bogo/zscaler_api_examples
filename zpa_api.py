@@ -37,8 +37,9 @@ class APIManager:
                                          headers=APIManager.HEADERS,
                                          data=auth_data)
         auth_rep = json.loads(auth_result.content)
-        APIManager.HEADERS['Authorization'] = F"{auth_rep['token_type']} {auth_rep['access_token']}"
+        print(F'AUTH_DATA: {auth_data}')
         if auth_result.status_code == 200:
+            APIManager.HEADERS['Authorization'] = F"{auth_rep['token_type']} {auth_rep['access_token']}"
             print(F'AUTHENTICATION SUCCESSFUL, RESPONSE CODE: {auth_result.status_code}')
         else:
             print(F'AUTHENTICATION FAILED. RESPONSE CODE: {auth_result.status_code}')
